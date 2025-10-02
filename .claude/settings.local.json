@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "Bash(curl:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(dotnet run:*)",
+      "Bash(timeout:*)",
+      "Bash(psql \"Host=aws-0-sa-east-1.pooler.supabase.com;Port=5432;Database=postgres;Username=postgres.yzhqgoofrxixndfcfucz;Password=8PrqjzQegAgFHnM4;SSL Mode=Require;\" -c \"SET search_path TO whatsapp_service; SELECT id, client_id, name FROM tenants WHERE client_id = ''test-client-001'';\")",
+      "Bash(powershell:*)",
+      "Bash(dir:*)",
+      "Read(//d/Projetos/Ventry/whatsapp-microservice/**)",
+      "Bash(npm run dev:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(taskkill:*)",
+      "Read(//d/Projetos/**)",
+      "Bash(tasklist)",
+      "Bash(where npm)",
+      "Bash(az:*)",
+      "Bash(docker:*)",
+      "Bash(awk:*)",
+      "Bash(xargs kill:*)",
+      "Bash(pkill:*)",
+      "Bash(cd:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

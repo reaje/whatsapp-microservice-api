@@ -1,0 +1,6 @@
+@WhatsApp.API_HostAddress = http://localhost:5278
+
+GET {{WhatsApp.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
