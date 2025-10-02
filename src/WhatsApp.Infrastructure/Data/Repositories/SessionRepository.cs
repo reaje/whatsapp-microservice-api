@@ -24,4 +24,13 @@ public class SessionRepository : Repository<WhatsAppSession>, ISessionRepository
             .Where(s => s.TenantId == tenantId && s.IsActive)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<WhatsAppSession?> GetLastSessionByTenantAsync(Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        return await _dbSet
+            .Include(s => s.Tenant)
+            .Where(s => s.TenantId == tenantId)
+            .OrderByDescending(s => s.UpdatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
 }

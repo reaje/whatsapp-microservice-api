@@ -12,17 +12,20 @@ public class MessageService : IMessageService
     private readonly ISessionRepository _sessionRepository;
     private readonly IMessageRepository _messageRepository;
     private readonly IWhatsAppProvider _whatsAppProvider;
+    private readonly ISessionService _sessionService;
     private readonly ILogger<MessageService> _logger;
 
     public MessageService(
         ISessionRepository sessionRepository,
         IMessageRepository messageRepository,
         IWhatsAppProvider whatsAppProvider,
+        ISessionService sessionService,
         ILogger<MessageService> logger)
     {
         _sessionRepository = sessionRepository;
         _messageRepository = messageRepository;
         _whatsAppProvider = whatsAppProvider;
+        _sessionService = sessionService;
         _logger = logger;
     }
 
@@ -39,24 +42,91 @@ public class MessageService : IMessageService
         await _whatsAppProvider.InitializeAsync(session.PhoneNumber, tenantConfig, cancellationToken);
     }
 
+    /// <summary>
+    /// Gets an active session or attempts to reactivate the last session for the tenant
+    /// </summary>
+    private async Task<WhatsAppSession?> GetOrReactivateSessionAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Looking for active session for tenant {TenantId}", tenantId);
+
+        // Try to get active session first
+        var activeSessions = await _sessionRepository.GetActivesessionsByTenantAsync(tenantId, cancellationToken);
+        var activeSession = activeSessions.FirstOrDefault();
+
+        if (activeSession != null)
+        {
+            _logger.LogInformation("Found active session {SessionId} for tenant {TenantId}", activeSession.Id, tenantId);
+            return activeSession;
+        }
+
+        _logger.LogWarning("No active session found for tenant {TenantId}. Attempting to reactivate last session...", tenantId);
+
+        // No active session found, try to get the last session
+        var lastSession = await _sessionRepository.GetLastSessionByTenantAsync(tenantId, cancellationToken);
+
+        if (lastSession == null)
+        {
+            _logger.LogWarning("No sessions found for tenant {TenantId}", tenantId);
+            return null;
+        }
+
+        _logger.LogInformation("Found last session {SessionId} (phone: {PhoneNumber}) for tenant {TenantId}. Attempting reactivation...",
+            lastSession.Id, lastSession.PhoneNumber, tenantId);
+
+        try
+        {
+            // Attempt to reinitialize the session
+            var status = await _sessionService.InitializeSessionAsync(
+                tenantId,
+                lastSession.PhoneNumber,
+                lastSession.ProviderType,
+                cancellationToken);
+
+            if (status.IsConnected)
+            {
+                _logger.LogInformation("Successfully reactivated session for phone {PhoneNumber}, tenant {TenantId}",
+                    lastSession.PhoneNumber, tenantId);
+
+                // Refresh session from database to get updated IsActive status
+                var reactivatedSession = await _sessionRepository.GetByTenantAndPhoneAsync(
+                    tenantId,
+                    lastSession.PhoneNumber,
+                    cancellationToken);
+
+                return reactivatedSession;
+            }
+            else
+            {
+                _logger.LogWarning("Failed to reactivate session for phone {PhoneNumber}, tenant {TenantId}. Session not connected.",
+                    lastSession.PhoneNumber, tenantId);
+                return null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error reactivating session for phone {PhoneNumber}, tenant {TenantId}",
+                lastSession.PhoneNumber, tenantId);
+            return null;
+        }
+    }
+
     public async Task<MessageResult> SendTextAsync(Guid tenantId, string to, string content, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Sending text message for tenant {TenantId} to {To}", tenantId, to);
 
-        // Get active session for tenant
-        var sessions = await _sessionRepository.GetActivesessionsByTenantAsync(tenantId, cancellationToken);
-        var session = sessions.FirstOrDefault();
+        // Get active session or attempt to reactivate
+        var session = await GetOrReactivateSessionAsync(tenantId, cancellationToken);
 
         if (session == null)
         {
-            _logger.LogWarning("No active session found for tenant {TenantId}", tenantId);
+            _logger.LogWarning("No session available for tenant {TenantId} after reactivation attempt", tenantId);
             return new MessageResult
             {
                 MessageId = string.Empty,
                 Status = MessageStatus.Failed,
                 Provider = "none",
                 Timestamp = DateTime.UtcNow,
-                Error = "No active WhatsApp session found for tenant"
+                Error = "No WhatsApp session available. Please scan QR code to reconnect."
             };
         }
 
@@ -94,19 +164,19 @@ public class MessageService : IMessageService
     {
         _logger.LogInformation("Sending media message for tenant {TenantId} to {To}, type {MediaType}", tenantId, to, mediaType);
 
-        var sessions = await _sessionRepository.GetActivesessionsByTenantAsync(tenantId, cancellationToken);
-        var session = sessions.FirstOrDefault();
+        // Get active session or attempt to reactivate
+        var session = await GetOrReactivateSessionAsync(tenantId, cancellationToken);
 
         if (session == null)
         {
-            _logger.LogWarning("No active session found for tenant {TenantId}", tenantId);
+            _logger.LogWarning("No session available for tenant {TenantId} after reactivation attempt", tenantId);
             return new MessageResult
             {
                 MessageId = string.Empty,
                 Status = MessageStatus.Failed,
                 Provider = "none",
                 Timestamp = DateTime.UtcNow,
-                Error = "No active WhatsApp session found for tenant"
+                Error = "No WhatsApp session available. Please scan QR code to reconnect."
             };
         }
 
@@ -147,19 +217,19 @@ public class MessageService : IMessageService
     {
         _logger.LogInformation("Sending location message for tenant {TenantId} to {To}", tenantId, to);
 
-        var sessions = await _sessionRepository.GetActivesessionsByTenantAsync(tenantId, cancellationToken);
-        var session = sessions.FirstOrDefault();
+        // Get active session or attempt to reactivate
+        var session = await GetOrReactivateSessionAsync(tenantId, cancellationToken);
 
         if (session == null)
         {
-            _logger.LogWarning("No active session found for tenant {TenantId}", tenantId);
+            _logger.LogWarning("No session available for tenant {TenantId} after reactivation attempt", tenantId);
             return new MessageResult
             {
                 MessageId = string.Empty,
                 Status = MessageStatus.Failed,
                 Provider = "none",
                 Timestamp = DateTime.UtcNow,
-                Error = "No active WhatsApp session found for tenant"
+                Error = "No WhatsApp session available. Please scan QR code to reconnect."
             };
         }
 
@@ -199,19 +269,19 @@ public class MessageService : IMessageService
     {
         _logger.LogInformation("Sending audio message for tenant {TenantId} to {To}", tenantId, to);
 
-        var sessions = await _sessionRepository.GetActivesessionsByTenantAsync(tenantId, cancellationToken);
-        var session = sessions.FirstOrDefault();
+        // Get active session or attempt to reactivate
+        var session = await GetOrReactivateSessionAsync(tenantId, cancellationToken);
 
         if (session == null)
         {
-            _logger.LogWarning("No active session found for tenant {TenantId}", tenantId);
+            _logger.LogWarning("No session available for tenant {TenantId} after reactivation attempt", tenantId);
             return new MessageResult
             {
                 MessageId = string.Empty,
                 Status = MessageStatus.Failed,
                 Provider = "none",
                 Timestamp = DateTime.UtcNow,
-                Error = "No active WhatsApp session found for tenant"
+                Error = "No WhatsApp session available. Please scan QR code to reconnect."
             };
         }
 
